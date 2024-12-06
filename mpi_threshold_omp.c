@@ -5,14 +5,15 @@
  * splitting up an image based off the number of processors so that each one handles that number of pixels 
  * utilizing a threshold value (128) to split the pixels into either black or white
  * and then outputting a finalized black and white thresholded image
- * Compile: mpicc -o pngThreshold mpi_threshold_omp.c -lpng -fopenmp
+ * Compile: mpicc -o pngThreshold mpi_threshold_omp.c -lpng -fopenmp -lm
  * 
  * Execute: mpiexec -n <numcores> ./pngThreshold <numthreads> <image.png> <outimage.png>
  */
 
-#include <png.h>
+#include <math.h>
 #include "mpi.h"
 #include "omp.h"
+#include <png.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,62 @@ int width, height;
 png_byte color_type;
 png_byte bit_depth;
 png_bytep *row_pointers = NULL;
+
+void apply_sauvola_threshold(png_bytep *segment, int nthreads, int height, int width)
+{
+    double k = 0.5;
+    int window_size = 25;
+    int half_window = window_size / 2;
+
+    #pragma omp parallel for num_threads(nthreads)
+    for (int y = half_window; y < height - half_window; ++y) {
+        png_bytep row = segment[y];
+        for (int x = half_window; x < width - half_window; ++x) {
+            // Calculate mean and standard deviation in the window
+            double sum = 0, sum_sq = 0;
+            int count = 0;
+
+            for (int j = -half_window; j <= half_window; ++j) {
+                for (int i = -half_window; i <= half_window; ++i) {
+                    png_bytep px;
+                    if (color_type == PNG_COLOR_TYPE_RGBA) {
+                        px = &(row[x * 4]);
+                    } else {
+                        px = &(row[x * 3]);
+                    }
+                    int grayscale_value = (px[0] + px[1] + px[2]) / 3;
+                    double pixel = grayscale_value / 255.0; // Normalize to [0,1]
+                    sum += pixel;
+                    sum_sq += pixel * pixel;
+                    count++;
+                }
+            }
+
+            double mean = sum / count;
+            double variance = (sum_sq / count) - (mean * mean);
+            double stddev = sqrt(variance);
+
+            // Sauvola threshold calculation
+            double threshold = mean * (1 + k * ((stddev / 0.5) - 1));
+
+            // Apply the threshold
+            png_bytep px;
+            if (color_type == PNG_COLOR_TYPE_RGBA) {
+                px = &(row[x * 4]);
+            } else {
+                px = &(row[x * 3]);
+            }
+            // Calculate grayscale value
+            int grayscale_value = (px[0] + px[1] + px[2]) / 3;
+            // Apply threshold to convert to black or white
+            if (grayscale_value > threshold) {
+                px[0] = px[1] = px[2] = 255;  // Set color to white
+            } else {
+                px[0] = px[1] = px[2] = 0;    // Set color to black
+            }
+        }
+    }
+}
 
 // Writes a png to an image file 
 void write_png(const char *file_name) {
@@ -149,6 +206,7 @@ int main(int argc, char *argv[]) {
    char *input_file_name;
    char *output_file_name;
    int nthreads;
+   double startTime, elapsedTime;
 
    // Initialize MPI
    MPI_Init(&argc, &argv);
@@ -171,11 +229,16 @@ int main(int argc, char *argv[]) {
    png_structp png_ptr = NULL;
    png_infop info_ptr = NULL;
 
+   MPI_Barrier(comm);
+   startTime = MPI_Wtime();
    // Manager core reads the input png
    if (rank == 0) {
        read_png(input_file_name);
        png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
        info_ptr = png_create_info_struct(png_ptr);
+       
+       elapsedTime = MPI_Wtime() - startTime;
+       printf("Time to read image (serial): %f ms\n", elapsedTime * 1000);
    }
 
    // Broadcast the image to all processes
@@ -239,31 +302,17 @@ int main(int argc, char *argv[]) {
        }
    }
 
+   MPI_Barrier(comm);
+   startTime = MPI_Wtime();
    // Process the segment with local thresholding black and white conversion
-   int threshold = 128;
-#pragma omp parallel for num_threads(nthreads)
-   for (int y = 0; y <= end_row - start_row; y++) {
-       png_bytep row = segment[y];
-       for (int x = 0; x < width; x++) {
-           png_bytep px;
-           if (color_type == PNG_COLOR_TYPE_RGBA) {
-               px = &(row[x * 4]);
-           } else {
-               px = &(row[x * 3]);
-           }
-           // Calculate grayscale value
-           int grayscale_value = (px[0] + px[1] + px[2]) / 3;
-           // Apply threshold to convert to black or white
-           if (grayscale_value > threshold) {
-               px[0] = px[1] = px[2] = 255;  // Set color to white
-           } else {
-               px[0] = px[1] = px[2] = 0;    // Set color to black
-           }
-       }
-   }
+   apply_sauvola_threshold(segment, nthreads, end_row - start_row, width);
+
+   MPI_Barrier(comm);
+   elapsedTime = MPI_Wtime() - startTime;
 
    // Gather the processed segments
    if (rank == 0) {
+       printf("Time to threshold image (parallel): %f ms\n", elapsedTime * 1000);
        // Copy core 0s segment back to the main image
        for (int y = 0; y <= end_row - start_row; y++) {
            memcpy(row_pointers[start_row + y], segment[y], row_bytes);
