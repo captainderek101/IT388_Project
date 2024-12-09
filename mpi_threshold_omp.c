@@ -1,5 +1,5 @@
 /*
- * mpi_threshold.c
+ * mpi_threshold_omp.c
  *
  * Implementation of local thresholding using sauvolas method for thresholding
  * which is performed by splitting up an image file into however many threads there are
