@@ -28,10 +28,9 @@ png_byte color_type;
 png_byte bit_depth;
 png_bytep *row_pointers = NULL;
 
-void apply_sauvola_threshold(png_bytep *segment, int nthreads, int seg_height, int width)
+void apply_sauvola_threshold(png_bytep *segment, int nthreads, int window_size, int seg_height, int width)
 {
     double k = 0.5;
-    int window_size = 25;
     int half_window = window_size / 2;
 
     #pragma omp parallel for num_threads(nthreads)
@@ -60,7 +59,6 @@ void apply_sauvola_threshold(png_bytep *segment, int nthreads, int seg_height, i
             double mean = sum / count;
             double variance = (sum_sq / count) - (mean * mean);
             double stddev = sqrt(variance);
-            double R = 1;
             // Sauvola threshold calculation
             double threshold = mean * (1 + k * ((stddev / 1) - 1));
 
@@ -203,11 +201,13 @@ int main(int argc, char *argv[]) {
    int nthreads;
    double startTime, elapsedTime;
 
+   // Initialize MPI
    MPI_Init(&argc, &argv);
    MPI_Comm comm = MPI_COMM_WORLD;
    MPI_Comm_size(comm, &nproc);
    MPI_Comm_rank(comm, &rank);
 
+   // Check for the desired number of arguments
    if (argc < 4) {
        if (rank == 0) {
            fprintf(stderr, "USAGE: mpiexec -n <number of cores> ./pngtest <numthreads> <input_filename> <output_filename>\n");
@@ -225,6 +225,7 @@ int main(int argc, char *argv[]) {
    MPI_Barrier(comm);
    startTime = MPI_Wtime();
 
+   // Manager core reads the input png
    if (rank == 0) {
        read_png(input_file_name);
        png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
@@ -233,6 +234,7 @@ int main(int argc, char *argv[]) {
        printf("Time to read image (serial): %f ms\n", elapsedTime * 1000);
    }
 
+   // Broadcast image properties to all processes
    MPI_Bcast(&width, 1, MPI_INT, 0, comm);
    MPI_Bcast(&height, 1, MPI_INT, 0, comm);
    MPI_Bcast(&color_type, 1, MPI_BYTE, 0, comm);
@@ -255,9 +257,13 @@ int main(int argc, char *argv[]) {
 
    // Determine padded start and end rows for boundaries 
    int padded_start = start_row - half_window;
-   if (padded_start < 0) padded_start = 0;
+   if (padded_start < 0) {
+       padded_start = 0;
+   }
    int padded_end = end_row + half_window;
-   if (padded_end > height - 1) padded_end = height - 1;
+   if (padded_end > height - 1) {
+       padded_end = height - 1;
+   }
 
    int padded_height = padded_end - padded_start + 1;
    
@@ -281,9 +287,13 @@ int main(int argc, char *argv[]) {
            }
 
            int i_padded_start = i_start_row - half_window;
-           if (i_padded_start < 0) i_padded_start = 0;
+           if (i_padded_start < 0) {
+               i_padded_start = 0;
+           }
            int i_padded_end = i_end_row + half_window;
-           if (i_padded_end > height - 1) i_padded_end = height - 1;
+           if (i_padded_end > height - 1) {
+               i_padded_end = height - 1;
+           }
            int i_padded_height = i_padded_end - i_padded_start + 1;
 
            for (int y = 0; y < i_padded_height; y++) {
@@ -304,7 +314,7 @@ int main(int argc, char *argv[]) {
    startTime = MPI_Wtime();
 
    // Apply threshold to main segments
-   apply_sauvola_threshold(segment, nthreads, padded_height, width);
+   apply_sauvola_threshold(segment, nthreads, window_size, padded_height, width);
 
    MPI_Barrier(comm);
    elapsedTime = MPI_Wtime() - startTime;
@@ -330,11 +340,6 @@ int main(int argc, char *argv[]) {
                i_end_row = i_start_row + rows_per_proc - 1;
            }
 
-           int i_padded_start = i_start_row - half_window;
-           if (i_padded_start < 0) i_padded_start = 0;
-           int i_padded_end = i_end_row + half_window;
-           if (i_padded_end > height - 1) i_padded_end = height - 1;
-           int i_core_offset = i_start_row - i_padded_start;
            int i_core_height = i_end_row - i_start_row + 1;
 
            for (int y = 0; y < i_core_height; y++) {
@@ -350,10 +355,12 @@ int main(int argc, char *argv[]) {
        }
    }
  
+   // Manager writes the final processed image to the output file
    if (rank == 0) {
        write_png(output_file_name);
    }
 
+   // Finalize MPI
    MPI_Finalize();
    return 0;
 }
