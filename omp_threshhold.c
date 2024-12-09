@@ -37,7 +37,6 @@ void apply_sauvola_threshold(png_bytep *segment, int nthreads, int seg_height, i
             // Calculate mean and standard deviation in the window
             double sum = 0, sum_sq = 0;
             int count = 0;
-
             for (int j = -half_window; j <= half_window; ++j) {
                 png_bytep row_inner = segment[y + j];
                 for (int i = -half_window; i <= half_window; ++i) {
@@ -54,7 +53,6 @@ void apply_sauvola_threshold(png_bytep *segment, int nthreads, int seg_height, i
                     count++;
                 }
             }
-
             double mean = sum / count;
             double variance = (sum_sq / count) - (mean * mean);
             double stddev = sqrt(variance);
@@ -62,7 +60,7 @@ void apply_sauvola_threshold(png_bytep *segment, int nthreads, int seg_height, i
             // Sauvola threshold calculation
             double threshold = mean * (1 + k * ((stddev / 1) - 1));
 
-            // Apply the threshold to the center pixel
+            // Apply threshold
             png_bytep px;
             if (color_type == PNG_COLOR_TYPE_RGBA) {
                 px = &(row[x * 4]);
@@ -193,7 +191,7 @@ void read_png(const char *file_name) {
    fclose(fp);
    png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
 }
-
+// Main function to input and threshold the image
 int main(int argc, char *argv[]) {
    int rank, nproc;
    char *input_file_name;
@@ -251,7 +249,7 @@ int main(int argc, char *argv[]) {
        end_row = start_row + rows_per_proc - 1;
    }
 
-   // Determine padded start and end rows
+   // Determine padded start and end rows for boundaries 
    int padded_start = start_row - half_window;
    if (padded_start < 0) padded_start = 0;
    int padded_end = end_row + half_window;
@@ -266,7 +264,7 @@ int main(int argc, char *argv[]) {
        segment[y] = (png_byte*)malloc(row_bytes);
    }
 
-   // Scatter rows with padding
+   // Scatter rows with boundaries
    if (rank == 0) {
        for (int i = 1; i < nproc; i++) {
            int i_start_row, i_end_row;
@@ -301,7 +299,7 @@ int main(int argc, char *argv[]) {
    MPI_Barrier(comm);
    startTime = MPI_Wtime();
 
-   // Apply threshold on padded segment
+   // Apply threshold to main segments
    apply_sauvola_threshold(segment, nthreads, padded_height, width);
 
    MPI_Barrier(comm);
@@ -310,14 +308,14 @@ int main(int argc, char *argv[]) {
    if (rank == 0) {
        printf("Time to threshold image (parallel): %f ms\n", elapsedTime * 1000);
 
-       // Copy back the core (non-padded) portion
+       // Copy back the segments without the boundaries
        int core_offset = start_row - padded_start;
        int core_height = end_row - start_row + 1;
        for (int y = 0; y < core_height; y++) {
            memcpy(row_pointers[start_row + y], segment[core_offset + y], row_bytes);
        }
 
-       // Receive segments from other ranks
+       // Receive segments back
        for (int i = 1; i < nproc; i++) {
            int i_start_row, i_end_row;
            if (i < extra_rows) {
@@ -340,7 +338,7 @@ int main(int argc, char *argv[]) {
            }
        }
    } else {
-       // Send back only the core portion
+       // Send back only the original portion with no boundaries
        int core_offset = start_row - padded_start;
        int core_height = end_row - start_row + 1;
        for (int y = 0; y < core_height; y++) {
