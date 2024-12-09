@@ -356,9 +356,13 @@ int main(int argc, char *argv[]) {
         }
     }
     
+    MPI_Barrier(comm);
+    startTime = MPI_Wtime();
     // Manager writes the final processed image to the output file
     if (rank == 0) {
         write_png(output_file_name);
+        elapsedTime = MPI_Wtime() - startTime;
+        printf("Time to write image (serial): %f ms\n", elapsedTime * 1000);
     }
 
     // Finalize MPI
