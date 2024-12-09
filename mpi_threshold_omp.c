@@ -30,7 +30,6 @@ png_bytep *row_pointers = NULL;
 
 void apply_sauvola_threshold(png_bytep *segment, int nthreads, int window_size, int seg_height, int width)
 {
-    double k = 0.5;
     int half_window = window_size / 2;
 
     #pragma omp parallel for num_threads(nthreads)
@@ -59,8 +58,10 @@ void apply_sauvola_threshold(png_bytep *segment, int nthreads, int window_size, 
             double mean = sum / count;
             double variance = (sum_sq / count) - (mean * mean);
             double stddev = sqrt(variance);
+            double k = 0.5;
+            double R = 1;
             // Sauvola threshold calculation
-            double threshold = mean * (1 + k * ((stddev / 1) - 1));
+            double threshold = mean * (1 + k * ((stddev / R) - 1));
 
             // Apply threshold
             png_bytep px;
