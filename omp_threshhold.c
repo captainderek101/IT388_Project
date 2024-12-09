@@ -1,10 +1,14 @@
 /*
  * mpi_threshold.c
- * 
- * Basic implementation of parallel thresholding which was performed by:
- * splitting up an image based off the number of processors so that each one handles that number of pixels 
- * utilizing a threshold value (128) to split the pixels into either black or white
- * and then outputting a finalized black and white thresholded image
+ *
+ * Implementation of local thresholding using sauvolas method for thresholding
+ * which is performed by splitting up an image file into however many threads there are
+ * and then sending out each segment to its thread using MPI send and recieve 
+ * it then applying a threshold based off the standard deviation and mean to turn each pixel black or white
+ * finally it outputs a finalized image thats completely seperated by black/white
+ *
+ * Coded by Brooke Bastion, Clay Remen, and Derek Reynolds
+ * Written for IT 388 Final Project
  * Compile: mpicc -o pngThreshold mpi_threshold_omp.c -lpng -fopenmp -lm
  * 
  * Execute: mpiexec -n <numcores> ./pngThreshold <numthreads> <image.png> <outimage.png>
@@ -345,7 +349,7 @@ int main(int argc, char *argv[]) {
            MPI_Send(segment[core_offset + y], row_bytes, MPI_BYTE, 0, 0, comm);
        }
    }
-
+ 
    if (rank == 0) {
        write_png(output_file_name);
    }
