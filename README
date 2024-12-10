@@ -27,3 +27,6 @@ README
    Execute: mpiexec -n <numcores> ./pngThreshold <numthreads> <image.png> <outimage.png>
 
    Test statement: mpiexec -n 4 ./pngThreshold 4 testImage1.png outImage1.png
+
+
+   This project requires libpng: https://github.com/pnggroup/libpng
