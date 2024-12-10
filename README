@@ -1,0 +1,29 @@
+README
+  mpi_threshold_omp.c
+  Overview: 
+  Our program implements a parallelized version of image segmentation thresholding by using Sauvolas method. 
+  It divides up an image using MPI and OpenMP to break down an image and convert it to black and white.
+
+  Sauvolas function:
+  Calculates all the pixel thresholds by using a local mean and standard deviation
+  it uses a Omp for loop to run through all pixels given to each segment and then returns their grayvalue in black/white
+  K and R are constants used to adjust the thresholded output and further fine tune our data
+
+  Read png:
+  This function has a few error checking functions to ensure the file read in is a png and then proceeds to use a libpng structure to format the PNG file
+  It then reads in all the necessary data like width, height, colors, and bit depth and then converts any colors to a default 0-256 format to be processed
+
+  Write Png:
+  This function initializes another libpng struct to create a new png file where it sets the metadata like dimensions, color type, and bit depth using the formated black and white images data
+  It then writes data into row pointers row by row until the finish image is ready to be printed back to the user
+
+  Main function: 
+  All of our work through MPI occurs here and we use various send/recieves ontop of padded segments for boundaries and core segments for their original countrerparts
+  We print out all our data here like elapsed time for each segment aswell as writing back the finished thresholded image
+   
+   
+   Compile: mpicc -o pngThreshold mpi_threshold_omp.c -lpng -fopenmp -lm
+
+   Execute: mpiexec -n <numcores> ./pngThreshold <numthreads> <image.png> <outimage.png>
+
+   Test statement: mpiexec -n 4 ./pngThreshold 4 testImage1.png outImage1.png

@@ -1,0 +1,27 @@
+#!/bin/bash                                                                     
+#SBATCH --job-name="pngThreshold"                                                      
+#SBATCH --output="pngThreshold.%j.%N.txt"                                        
+#SBATCH --partition=compute                                                     
+#SBATCH --nodes=1                                                               
+#SBATCH --ntasks-per-node=40                                                    
+#SBATCH --account=isu102                                                        
+#SBATCH --export=ALL                                                            
+#SBATCH -t 10:00:00                                                             
+#SBATCH --mem=4G            
+
+# File test section
+srun -n 4 ./pngThreshold 4 testImage1.png outImage1.png
+srun -n 4 ./pngThreshold 4 testImage2.png outImage2.png
+srun -n 4 ./pngThreshold 4 testImage3.png outImage3.png
+srun -n 4 ./pngThreshold 4 testImage4.png outImage4.png
+srun -n 4 ./pngThreshold 4 testImage5.png outImage5.png
+srun -n 4 ./pngThreshold 4 testImage6.png outImage6.png
+srun -n 4 ./pngThreshold 4 testImage7.png outImage7.png
+srun -n 4 ./pngThreshold 4 testImage8.png outImage8.png
+srun -n 4 ./pngThreshold 4 testImage9.png outImage9.png
+
+# Runtime, speedup section
+srun -n 1 ./pngThreshold 1 testImage10.png outImage10.png
+srun -n 2 ./pngThreshold 2 testImage10.png outImage10.png
+srun -n 5 ./pngThreshold 5 testImage10.png outImage10.png
+srun -n 10 ./pngThreshold 10 testImage10.png outImage10.png
